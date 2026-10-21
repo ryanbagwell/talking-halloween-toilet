@@ -51,3 +51,6 @@ cmake_install.cmake
 
 # macOS
 .DS_Store
+
+# secrets
+burping_toilet/src/secrets.h
