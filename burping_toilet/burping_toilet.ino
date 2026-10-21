@@ -4,9 +4,9 @@
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WiFi.h>
-#include "src/burp.h"
-#include "src/secrets.h"
-#include "src/constants.h"
+#include "burp.h"
+#include "secrets.h"
+#include "constants.h"
 
 
 I2SClass i2s;
