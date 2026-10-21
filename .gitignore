@@ -1,0 +1,53 @@
+# Prerequisites
+*.d
+
+# Compiled object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Compiled dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.elf
+*.hex
+*.bin
+
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Arduino / PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Editors / IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# macOS
+.DS_Store
