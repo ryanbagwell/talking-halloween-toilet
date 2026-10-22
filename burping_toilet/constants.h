@@ -22,7 +22,7 @@ const int CLOSE_MS_PER_DEGREE = 10;  // set to 0 to slam shut
 // ---- Distance sensor ----
 const float TRIGGER_CM = 50;                  // burp when someone comes closer than this
 const float CLEAR_CM = 65;                    // re-arm once they step back past this
-const int TRIGGER_READINGS = 0;               // close readings in a row needed (filters noise)
+const int TRIGGER_READINGS = 1;               // close readings in a row needed (filters noise)
 const unsigned long COOLDOWN_MS = 20000;      // minimum time between burps
 const unsigned long SENSOR_INTERVAL_MS = 40;  // the sensor updates about every 38 ms
 
