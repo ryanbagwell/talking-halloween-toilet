@@ -5,7 +5,9 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include "burp.h"
+#include "goat.h"
 #include "secrets.h"
+#include "sound.h"
 #include "constants.h"
 
 
@@ -57,53 +59,71 @@ void lidTask(void *) {
 
 void printHelp();
 
-size_t dataStart = 0;  // where the samples begin inside burp_wav
-size_t dataEnd = 0;    // where they end
-uint32_t sampleRate = 16000;
+// All sounds must be mono, 16-bit, SAMPLE_RATE WAV files:
+//   ffmpeg -i in.mp3 -ac 1 -ar 16000 -c:a pcm_s16le -map_metadata -1 name.wav
+//   xxd -i name.wav > name.h   (then make the array const)
+const uint32_t SAMPLE_RATE = 16000;
 
-uint16_t read16(size_t p) {
-  return burp_wav[p] | (burp_wav[p + 1] << 8);
+// Played in this order, one per trigger
+Sound sounds[] = {
+  {"burp", burp_wav, burp_wav_len, 0, 0},
+  {"screaming goats", goat_wav, goat_wav_len, 0, 0},
+};
+const int SOUND_COUNT = sizeof(sounds) / sizeof(sounds[0]);
+int nextSound = 0;
+
+uint16_t read16(const unsigned char *b, size_t p) {
+  return b[p] | (b[p + 1] << 8);
 }
 
-uint32_t read32(size_t p) {
-  return burp_wav[p] | (burp_wav[p + 1] << 8) | (burp_wav[p + 2] << 16) | ((uint32_t)burp_wav[p + 3] << 24);
+uint32_t read32(const unsigned char *b, size_t p) {
+  return b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | ((uint32_t)b[p + 3] << 24);
 }
 
-// Find the format info and the audio samples inside the WAV file
-bool parseWav() {
-  if (burp_wav_len < 12 || memcmp(burp_wav, "RIFF", 4) || memcmp(burp_wav + 8, "WAVE", 4)) {
-    Serial.println("burp.h doesn't contain a WAV file");
+// Find the format info and the audio samples inside a WAV file
+bool parseWav(Sound &snd) {
+  const unsigned char *b = snd.wav;
+  if (snd.len < 12 || memcmp(b, "RIFF", 4) || memcmp(b + 8, "WAVE", 4)) {
+    Serial.printf("%s: not a WAV file\n", snd.name);
     return false;
   }
   size_t pos = 12;
-  while (pos + 8 <= burp_wav_len) {
-    uint32_t size = read32(pos + 4);
-    if (!memcmp(burp_wav + pos, "fmt ", 4)) {
-      uint16_t channels = read16(pos + 10);
-      sampleRate = read32(pos + 12);
-      uint16_t bits = read16(pos + 22);
-      Serial.printf("WAV: %u Hz, %u channel(s), %u-bit\n", sampleRate, channels, bits);
-      if (channels != 1 || bits != 16) {
-        Serial.println("Re-export as mono, 16-bit PCM");
+  while (pos + 8 <= snd.len) {
+    uint32_t size = read32(b, pos + 4);
+    if (!memcmp(b + pos, "fmt ", 4)) {
+      uint16_t channels = read16(b, pos + 10);
+      uint32_t rate = read32(b, pos + 12);
+      uint16_t bits = read16(b, pos + 22);
+      Serial.printf("%s: %u Hz, %u channel(s), %u-bit\n", snd.name, rate, channels, bits);
+      if (channels != 1 || bits != 16 || rate != SAMPLE_RATE) {
+        Serial.printf("%s: re-export as mono, 16-bit PCM, %u Hz\n", snd.name, SAMPLE_RATE);
         return false;
       }
-    } else if (!memcmp(burp_wav + pos, "data", 4)) {
-      dataStart = pos + 8;
-      dataEnd = min((size_t)(dataStart + size), (size_t)burp_wav_len);
+    } else if (!memcmp(b + pos, "data", 4)) {
+      snd.dataStart = pos + 8;
+      snd.dataEnd = min((size_t)(snd.dataStart + size), (size_t)snd.len);
       return true;
     }
     pos += 8 + size + (size & 1);
   }
-  Serial.println("No audio data found in WAV");
+  Serial.printf("%s: no audio data found\n", snd.name);
   return false;
 }
 
-void playBurp() {
+// Play the next sound in the rotation
+void playNextSound() {
+  Sound &snd = sounds[nextSound];
+  nextSound = (nextSound + 1) % SOUND_COUNT;
+  Serial.printf("Playing %s\n", snd.name);
+  playSound(snd);
+}
+
+void playSound(const Sound &snd) {
   int16_t buf[512];  // stereo frames: left, right, left, right...
   size_t n = 0;
 
-  for (size_t i = dataStart; i + 1 < dataEnd; i += 2) {
-    int16_t s = (int16_t)(burp_wav[i] | (burp_wav[i + 1] << 8));
+  for (size_t i = snd.dataStart; i + 1 < snd.dataEnd; i += 2) {
+    int16_t s = (int16_t)(snd.wav[i] | (snd.wav[i + 1] << 8));
     buf[n++] = s;  // left
     buf[n++] = s;  // right
     if (n == 512) {
@@ -115,7 +135,7 @@ void playBurp() {
     i2s.write((uint8_t *)buf, n * sizeof(int16_t));
   }
 
-  // Follow with a little silence so the end of the burp doesn't repeat
+  // Follow with a little silence so the end of the sound doesn't repeat
   memset(buf, 0, sizeof(buf));
   for (int k = 0; k < 4; k++) {
     i2s.write((uint8_t *)buf, sizeof(buf));
@@ -126,10 +146,10 @@ void burpSequence() {
   Serial.println("BURP!");
   rgbLedWrite(RGB_BUILTIN, 0, 60, 0);
 
-  // Raise the lid and burp while it's rising
+  // Raise the lid and play the sound while it's rising
   moveLid(OPEN_ANGLE, OPEN_MS_PER_DEGREE);
   delay(OPEN_BEFORE_BURP_MS);
-  playBurp();
+  playNextSound();
   waitForLid();
   delay(HOLD_AFTER_BURP_MS);
 
@@ -291,12 +311,13 @@ void setup() {
   lid.write(CLOSED_ANGLE);
   xTaskCreatePinnedToCore(lidTask, "lid", 4096, NULL, 2, NULL, 1);
 
-  if (!parseWav()) {
-    while (true) {}
+  // A sound that fails to parse is left empty and plays as silence
+  for (int i = 0; i < SOUND_COUNT; i++) {
+    parseWav(sounds[i]);
   }
 
   i2s.setPins(I2S_BCLK, I2S_LRC, I2S_DIN);
-  if (!i2s.begin(I2S_MODE_STD, sampleRate, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO)) {
+  if (!i2s.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO)) {
     Serial.println("I2S failed to start");
     while (true) {}
   }
@@ -363,7 +384,7 @@ void printHelp() {
   Serial.println("  o      open lid");
   Serial.println("  c      close lid");
   Serial.println("  a<n>   move servo to angle n, e.g. a25");
-  Serial.println("  s      play burp sound only");
+  Serial.println("  s      play the next sound only (no lid movement)");
   Serial.println("  b      run the full burp sequence");
   Serial.println("  p      pause / resume the motion sensor");
   Serial.println("  d      start / stop printing distance readings");
@@ -392,8 +413,7 @@ void runCommand(String cmd) {
       break;
     }
     case 's':
-      Serial.println("Burp sound");
-      playBurp();
+      playNextSound();
       break;
     case 'b':
       burpSequence();
