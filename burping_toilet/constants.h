@@ -17,7 +17,7 @@ const int RATTLE_ANGLE = 10;  // small bump used for the rattle after the slam
 
 // ---- Lid speed (milliseconds per degree; higher = slower, 0 = full speed) ----
 const int OPEN_MS_PER_DEGREE = 10;   // 90 degrees takes about 0.9 seconds
-const int CLOSE_MS_PER_DEGREE = 10;  // set to 0 to slam shut
+const int CLOSE_MS_PER_DEGREE = 3;   // 90 degrees takes about 0.3 seconds; set to 0 to slam shut
 
 // ---- Distance sensor ----
 const float TRIGGER_CM = 50;                  // burp when someone comes closer than this
@@ -28,6 +28,6 @@ const unsigned long SENSOR_INTERVAL_MS = 40;  // the sensor updates about every 
 
 // ---- Timing ----
 const int OPEN_BEFORE_BURP_MS = 150;        // lid starts rising just before the sound
-const int HOLD_AFTER_BURP_MS = 300;         // lid stays up a moment after the burp
+const int HOLD_AFTER_BURP_MS = 0;           // lid stays up a moment after the sound
 const int RATTLES = 0;                      // quick rattles after the slam (0 = none)
 const int RATTLE_MS = 90;
