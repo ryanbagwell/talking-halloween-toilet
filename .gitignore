@@ -54,3 +54,7 @@ cmake_install.cmake
 
 # secrets
 burping_toilet/src/secrets.h
+
+# Wi-Fi password and HTTPS key
+burping_toilet/secrets.h
+burping_toilet/cert.h
