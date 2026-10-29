@@ -405,9 +405,6 @@ void startWebServer() {
   server.on("/debug", HTTP_GET, []() {
     server.send(200, "text/html", INDEX_HTML);
   });
-  server.on("/mictest", HTTP_GET, []() {
-    server.send(200, "text/html", MIC_TEST_HTML);
-  });
   server.on("/cmd", HTTP_POST, []() {
     queueCommand(server.arg("c").c_str());
     server.send(200, "text/plain", "ok");
@@ -421,11 +418,6 @@ void startWebServer() {
 esp_err_t httpsDebug(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
-}
-
-esp_err_t httpsMicTest(httpd_req_t *req) {
-  httpd_resp_set_type(req, "text/html");
-  return httpd_resp_send(req, MIC_TEST_HTML, HTTPD_RESP_USE_STRLEN);
 }
 
 // The same page at both: the root shows just the talk button, /talk adds the settings
@@ -604,7 +596,6 @@ void startHttpsServer() {
     {.uri = "/", .method = HTTP_GET, .handler = httpsTalk, .user_ctx = NULL},
     {.uri = "/talk", .method = HTTP_GET, .handler = httpsTalk, .user_ctx = NULL},
     {.uri = "/debug", .method = HTTP_GET, .handler = httpsDebug, .user_ctx = NULL},
-    {.uri = "/mictest", .method = HTTP_GET, .handler = httpsMicTest, .user_ctx = NULL},
     {.uri = "/speak", .method = HTTP_POST, .handler = httpsSpeak, .user_ctx = NULL},
     {.uri = "/llm", .method = HTTP_POST, .handler = httpsLlm, .user_ctx = NULL},
     {.uri = "/say", .method = HTTP_POST, .handler = httpsSay, .user_ctx = NULL},
