@@ -85,7 +85,7 @@ a{color:var(--muted)}
 <div class="meter"><div id="bar"></div></div>
 <pre id="log"></pre>
 <audio id="player" controls hidden></audio>
-<p><a href="/">Back to controls</a></p>
+<p><a href="/debug">Back to controls</a></p>
 </main><script>
 const $ = id => document.getElementById(id);
 const log = m => { $('log').textContent += m + '\n'; };
@@ -143,8 +143,8 @@ $('rec').onclick = () => {
 </script></body></html>
 )rawliteral";
 
-// Talk page (HTTPS only): record a guest on the phone, get a ChatGPT reply, and
-// send the spoken reply to /speak. The OpenAI key is stored only on the phone.
+// Talk page (HTTPS only): the phone's browser hears the guest, the local LLM writes a
+// reply, and ElevenLabs or Kokoro gives the toilet its voice.
 const char TALK_HTML[] = R"rawliteral(<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Talking Toilet</title>
@@ -176,11 +176,22 @@ input,textarea,select{box-sizing:border-box;width:100%;font:inherit;padding:10px
 textarea{min-height:110px;resize:vertical}
 #save{margin-top:16px;width:100%}
 a{color:var(--muted)}
+#talkDots{display:none}
+/* The root page (/): just the talk button, filling the screen, with dots while it works */
+body.simple main{max-width:none;height:100vh;height:100dvh;box-sizing:border-box;padding:16px;display:flex}
+body.simple main>:not(#talk){display:none}
+body.simple #talk{flex:1;font-size:2rem;border-radius:24px}
+body.simple.working #talkDots{display:flex;justify-content:center;gap:10px;margin-top:20px}
+#talkDots i{width:12px;height:12px;border-radius:50%;background:currentColor;animation:dot 1.2s infinite ease-in-out}
+#talkDots i:nth-child(2){animation-delay:.2s}
+#talkDots i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){#talkDots i{animation:none;opacity:.7}}
 </style></head><body><main>
 <h1>Talking Toilet</h1>
 <p class="muted" id="toilet">Connecting to the toilet...</p>
 <p id="state">Hold the button while the guest talks.</p>
-<button id="talk">Hold to talk</button>
+<button id="talk"><span id="talkLabel">Hold to talk</span><span id="talkDots"><i></i><i></i><i></i></span></button>
 <div class="row">
 <button id="burp">Burp!</button>
 <button id="reset">New conversation</button>
@@ -192,16 +203,9 @@ a{color:var(--muted)}
 <summary>Settings</summary>
 <label for="prompt">Personality</label>
 <textarea id="prompt"></textarea>
-<label for="provider">Chat replies from</label>
-<select id="provider">
-<option value="openai">OpenAI</option>
-<option value="local">Local LLM (llama.cpp)</option>
-</select>
-<div id="localFields">
 <p class="muted" id="localInfo"></p>
 <label for="localModel">Local model name (optional)</label>
 <input id="localModel" autocomplete="off" spellcheck="false">
-</div>
 <label for="ttsProvider">Toilet voice from</label>
 <select id="ttsProvider">
 <option value="elevenlabs">ElevenLabs</option>
@@ -225,13 +229,12 @@ a{color:var(--muted)}
 <p class="muted" id="ttsInfo"></p>
 <label for="lang">Speech recognition language</label>
 <input id="lang" autocomplete="off" spellcheck="false">
-<label for="chatModel">OpenAI chat model</label>
-<input id="chatModel" autocomplete="off" spellcheck="false">
 <button id="save">Save settings</button>
 </details>
-<p><a href="/">Back to controls</a></p>
+<p><a href="/debug">Back to controls</a></p>
 </main><script>
 const $ = id => document.getElementById(id);
+if (location.pathname === '/') document.body.classList.add('simple');  // root page: just the button
 const DEFAULTS = {
   prompt: 'You are a haunted toilet at a Halloween party. You are grumpy, dramatic and a little gross, ' +
     'and you love toilet puns, burps and gurgles. Stay family-friendly: no swearing and nothing truly ' +
@@ -242,15 +245,13 @@ const DEFAULTS = {
   kokoroVoice: 'am_onyx',
   speed: '0.9',
   lang: 'en-US',
-  provider: 'openai',
   localModel: '',
-  chatModel: 'gpt-4o-mini',
 };
 const FIELDS = Object.keys(DEFAULTS);
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 let settings = loadSettings();
-let config = {openaiKey: '', localLlm: '', localTts: '', elevenlabsKey: ''};  // from the toilet's firmware (secrets.h / constants.h)
+let config = {localLlm: '', localTts: '', elevenlabsKey: ''};  // from the toilet's firmware (secrets.h / constants.h)
 let history = [];
 let sayState = null;   // the reply the toilet is currently speaking, if any
 let recognition = null;
@@ -270,10 +271,6 @@ function loadSettings() {
 }
 FIELDS.forEach(k => $(k).value = settings[k]);
 
-const showLocalFields = () => $('localFields').hidden = $('provider').value !== 'local';
-$('provider').onchange = showLocalFields;
-showLocalFields();
-
 function showVoiceFields() {
   const eleven = $('ttsProvider').value === 'elevenlabs';
   $('elevenFields').hidden = !eleven;
@@ -288,13 +285,11 @@ fetch('/config').then(r => r.json()).then(c => {
   config = c;
   $('localInfo').textContent = c.localLlm
     ? 'The toilet relays chat to ' + c.localLlm + ' (LOCAL_LLM_URL in constants.h).'
-    : 'Set LOCAL_LLM_URL in constants.h to use a local LLM.';
+    : 'Set LOCAL_LLM_URL in constants.h to get chat replies.';
   showVoiceFields();
-  if (!c.openaiKey && settings.provider === 'openai') setState(NO_KEY_MESSAGE);
-  else if (!c.elevenlabsKey && settings.ttsProvider === 'elevenlabs') setState(NO_ELEVENLABS_KEY_MESSAGE);
+  if (!c.elevenlabsKey && settings.ttsProvider === 'elevenlabs') setState(NO_ELEVENLABS_KEY_MESSAGE);
 }).catch(() => setState("Couldn't load the toilet's settings - is it on Wi-Fi?"));
 
-const NO_KEY_MESSAGE = 'Set OPENAI_API_KEY in secrets.h and re-upload, or switch chat replies to the local LLM';
 const NO_ELEVENLABS_KEY_MESSAGE = 'Set ELEVENLABS_API_KEY in secrets.h and re-upload, or switch the voice to local Kokoro';
 showVoiceFields();
 
@@ -305,7 +300,13 @@ $('save').onclick = () => {
   setState('Settings saved');
 };
 
-function setState(text) { $('state').textContent = text; }
+function setState(text) {
+  $('state').textContent = text;
+  showWorking();
+}
+
+// Dots on the root page from release until the toilet has finished its reply
+function showWorking() { document.body.classList.toggle('working', busy || !!sayState); }
 
 function addLine(who, text) {
   const div = document.createElement('div');
@@ -334,7 +335,7 @@ const joinText = (a, b) => [a, b].filter(Boolean).join(' ');
 
 function resetButton() {
   talkButton.classList.remove('rec');
-  talkButton.textContent = 'Hold to talk';
+  $('talkLabel').textContent = 'Hold to talk';
 }
 
 // Hand this press's text on exactly once
@@ -386,10 +387,6 @@ function listen() {
 function startTalk(e) {
   e.preventDefault();
   if (busy || holding || !Recognition) return;
-  if (!config.openaiKey && settings.provider === 'openai') {
-    setState(NO_KEY_MESSAGE);
-    return;
-  }
   if (!config.elevenlabsKey && settings.ttsProvider === 'elevenlabs') {
     setState(NO_ELEVENLABS_KEY_MESSAGE);
     return;
@@ -409,7 +406,7 @@ function startTalk(e) {
     return;
   }
   talkButton.classList.add('rec');
-  talkButton.textContent = 'Listening... release to send';
+  $('talkLabel').textContent = 'Listening... release to send';
   setState('Listening');
 }
 
@@ -440,7 +437,7 @@ if (!Recognition) {
   setState("This browser doesn't have speech recognition");
 }
 
-// ---- Heard text -> OpenAI -> toilet ----
+// ---- Heard text -> local LLM -> toilet ----
 async function handleHeard(heard) {
   busy = true;
   talkButton.disabled = true;
@@ -472,34 +469,13 @@ async function handleHeard(heard) {
   } finally {
     busy = false;
     talkButton.disabled = false;
+    showWorking();
   }
-}
-
-async function openai(path, body, json = true) {
-  const headers = {Authorization: 'Bearer ' + config.openaiKey};
-  if (json) headers['Content-Type'] = 'application/json';
-  let res;
-  try {
-    res = await fetch('https://api.openai.com/v1/' + path,
-      {method: 'POST', headers, body: json ? JSON.stringify(body) : body});
-  } catch (e) {
-    throw new Error("Couldn't reach OpenAI - check the phone's internet connection");
-  }
-  if (res.status === 401) throw new Error('OpenAI rejected the API key - check OPENAI_API_KEY in secrets.h');
-  if (!res.ok) {
-    let msg = 'HTTP ' + res.status;
-    try { msg = (await res.json()).error.message; } catch (e) {}
-    throw new Error('OpenAI error: ' + msg);
-  }
-  return res;
 }
 
 async function chat(text) {
   const messages = [{role: 'system', content: settings.prompt}, ...history, {role: 'user', content: text}];
-  const data = settings.provider === 'local'
-    ? await localChat(messages)
-    : await (await openai('chat/completions',
-        {model: settings.chatModel, messages, max_completion_tokens: 200})).json();
+  const data = await localChat(messages);
   // Some local models think out loud in <think> tags; the toilet shouldn't say that part
   const reply = (data.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   if (!reply) throw new Error('The chat model sent back an empty reply - try again');
@@ -507,7 +483,7 @@ async function chat(text) {
   return reply;
 }
 
-// llama.cpp's server speaks the same chat format as OpenAI. The toilet relays the
+// Chat replies from llama.cpp's server (/v1/chat/completions). The toilet relays the
 // request, because this HTTPS page isn't allowed to call an http:// address itself.
 async function localChat(messages) {
   const body = {messages, max_tokens: 200};
@@ -615,6 +591,7 @@ function poll() {
         : sayState.spoke ? 'Hold the button while the guest talks.'
         : 'The toilet finished without speaking');
       sayState = null;
+      showWorking();
     }
   }).catch(() => $('toilet').textContent = 'Toilet not reachable');
 }

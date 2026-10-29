@@ -16,9 +16,6 @@
 #include "constants.h"
 
 // The committed secrets.h has no keys; these keep a fresh checkout compiling
-#ifndef OPENAI_API_KEY
-#define OPENAI_API_KEY ""
-#endif
 #ifndef LOCAL_LLM_API_KEY
 #define LOCAL_LLM_API_KEY ""
 #endif
@@ -396,15 +393,20 @@ String statusJson() {
 }
 
 void startWebServer() {
+  // The talk pages need the microphone, which only works over HTTPS
   server.on("/", HTTP_GET, []() {
+    server.sendHeader("Location", String("https://") + HOSTNAME + ".local/");
+    server.send(302, "text/plain", "");
+  });
+  server.on("/talk", HTTP_GET, []() {
+    server.sendHeader("Location", String("https://") + HOSTNAME + ".local/talk");
+    server.send(302, "text/plain", "");
+  });
+  server.on("/debug", HTTP_GET, []() {
     server.send(200, "text/html", INDEX_HTML);
   });
   server.on("/mictest", HTTP_GET, []() {
     server.send(200, "text/html", MIC_TEST_HTML);
-  });
-  server.on("/talk", HTTP_GET, []() {  // the microphone only works over HTTPS
-    server.sendHeader("Location", String("https://") + HOSTNAME + ".local/talk");
-    server.send(302, "text/plain", "");
   });
   server.on("/cmd", HTTP_POST, []() {
     queueCommand(server.arg("c").c_str());
@@ -416,7 +418,7 @@ void startWebServer() {
   server.begin();
 }
 
-esp_err_t httpsIndex(httpd_req_t *req) {
+esp_err_t httpsDebug(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
 }
@@ -426,6 +428,7 @@ esp_err_t httpsMicTest(httpd_req_t *req) {
   return httpd_resp_send(req, MIC_TEST_HTML, HTTPD_RESP_USE_STRLEN);
 }
 
+// The same page at both: the root shows just the talk button, /talk adds the settings
 esp_err_t httpsTalk(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, TALK_HTML, HTTPD_RESP_USE_STRLEN);
@@ -480,7 +483,7 @@ esp_err_t httpsSay(httpd_req_t *req) {
 
 // Settings the Talk page needs from the firmware. HTTPS only, since it includes the API keys.
 esp_err_t httpsConfig(httpd_req_t *req) {
-  String json = String("{\"openaiKey\":\"") + OPENAI_API_KEY + "\",\"localLlm\":\"" + LOCAL_LLM_URL +
+  String json = String("{\"localLlm\":\"") + LOCAL_LLM_URL +
                 "\",\"localTts\":\"" + LOCAL_TTS_URL + "\",\"elevenlabsKey\":\"" + ELEVENLABS_API_KEY + "\"}";
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -586,7 +589,7 @@ void startHttpsServer() {
   conf.servercert_len = sizeof(SERVER_CERT);  // includes the terminating null, as mbedTLS expects
   conf.prvtkey_pem = (const uint8_t *)SERVER_KEY;
   conf.prvtkey_len = sizeof(SERVER_KEY);
-  conf.httpd.max_uri_handlers = 12;  // the default of 8 is exactly what's registered below
+  conf.httpd.max_uri_handlers = 12;  // the default of 8 is too few for the routes below
   // Keep the server (and its CPU-heavy TLS handshakes) on core 0 with Wi-Fi. Left
   // unpinned at priority 5, it can interrupt playback in loop() on core 1, and the
   // speaker gets tiny gaps that sound like crackle.
@@ -598,9 +601,10 @@ void startHttpsServer() {
   }
 
   const httpd_uri_t routes[] = {
-    {.uri = "/", .method = HTTP_GET, .handler = httpsIndex, .user_ctx = NULL},
-    {.uri = "/mictest", .method = HTTP_GET, .handler = httpsMicTest, .user_ctx = NULL},
+    {.uri = "/", .method = HTTP_GET, .handler = httpsTalk, .user_ctx = NULL},
     {.uri = "/talk", .method = HTTP_GET, .handler = httpsTalk, .user_ctx = NULL},
+    {.uri = "/debug", .method = HTTP_GET, .handler = httpsDebug, .user_ctx = NULL},
+    {.uri = "/mictest", .method = HTTP_GET, .handler = httpsMicTest, .user_ctx = NULL},
     {.uri = "/speak", .method = HTTP_POST, .handler = httpsSpeak, .user_ctx = NULL},
     {.uri = "/llm", .method = HTTP_POST, .handler = httpsLlm, .user_ctx = NULL},
     {.uri = "/say", .method = HTTP_POST, .handler = httpsSay, .user_ctx = NULL},
