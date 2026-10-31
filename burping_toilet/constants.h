@@ -20,11 +20,14 @@ const int OPEN_MS_PER_DEGREE = 10;   // 90 degrees takes about 0.9 seconds
 const int CLOSE_MS_PER_DEGREE = 3;   // 90 degrees takes about 0.3 seconds; set to 0 to slam shut
 
 // ---- Distance sensor ----
-const float TRIGGER_CM = 50;                  // burp when someone comes closer than this
-const float CLEAR_CM = 65;                    // re-arm once they step back past this
-const int TRIGGER_READINGS = 1;               // close readings in a row needed (filters noise)
+const float TRIGGER_CM = 70;                  // burp when someone comes closer than this
+const float CLEAR_CM = 78;                    // re-arm once they step back past this (readings top out at 80)
+const int TRIGGER_READINGS = 3;               // close readings in a row needed (filters noise)
 const unsigned long COOLDOWN_MS = 20000;      // minimum time between burps
 const unsigned long SENSOR_INTERVAL_MS = 40;  // the sensor updates about every 38 ms
+const int SENSOR_SAMPLES = 16;                // quick samples per reading; the median is kept
+const int SENSOR_HISTORY = 5;                 // readings in the running median
+const unsigned long LID_SETTLE_MS = 200;      // ignore the sensor this long after the lid moves
 
 // ---- Timing ----
 const int OPEN_BEFORE_BURP_MS = 150;        // lid starts rising just before the sound

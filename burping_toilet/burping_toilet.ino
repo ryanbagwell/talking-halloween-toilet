@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ArduinoOTA.h>
 #include <ESP_I2S.h>
 #include <ESP32Servo.h>
@@ -58,6 +59,7 @@ bool streamDistance = false;   // 'd' prints readings to Serial Monitor
 volatile int lidAngle = CLOSED_ANGLE;
 volatile int lidTarget = CLOSED_ANGLE;
 volatile int lidStepMs = 0;
+volatile unsigned long lidMovedAt = 0;  // when the servo last stepped (the sensor ignores readings around then)
 
 void moveLid(int angle, int msPerDegree) {
   lidStepMs = msPerDegree;
@@ -84,6 +86,7 @@ void lidTask(void *) {
       lidAngle += (target > lidAngle) ? 1 : -1;
     }
     lid.write(lidAngle);
+    lidMovedAt = millis();
     vTaskDelay(pdMS_TO_TICKS(stepMs > 0 ? stepMs : 1));
   }
 }
@@ -681,9 +684,21 @@ void setup() {
   printHelp();
 }
 
-// Convert the sensor's output voltage to an approximate distance (accurate from 10 to 80 cm)
+// The middle value of a list; unlike an average, one wild value can't drag it off
+template <typename T>
+T median(T *values, int count) {
+  std::sort(values, values + count);
+  return values[count / 2];
+}
+
+// Convert the sensor's output voltage to an approximate distance (accurate from 10 to 80 cm).
+// Takes the median of several quick samples so a single spike is thrown out.
 float readDistanceCm() {
-  float volts = analogReadMilliVolts(SENSOR_PIN) / 1000.0;
+  uint32_t samples[SENSOR_SAMPLES];
+  for (int i = 0; i < SENSOR_SAMPLES; i++) {
+    samples[i] = analogReadMilliVolts(SENSOR_PIN);
+  }
+  float volts = median(samples, SENSOR_SAMPLES) / 1000.0;
   if (volts < 0.4) return 80;
   return constrain(27.86 * pow(volts, -1.15), 10, 80);
 }
@@ -697,11 +712,28 @@ void setArmed(bool armed) {
 void checkSensor() {
   static unsigned long lastRead = 0;
   static int closeCount = 0;
+  static float history[SENSOR_HISTORY];
+  static int historyAt = -1;
   if (millis() - lastRead < SENSOR_INTERVAL_MS) return;
   lastRead = millis();
 
-  // Smooth out the sensor's jitter
-  distanceCm = distanceCm * 0.6 + readDistanceCm() * 0.4;
+  // The moving lid can block the beam and the servo's current draw disturbs the
+  // reading, so skip readings while it moves and for a moment after
+  if (lidAngle != lidTarget || millis() - lidMovedAt < LID_SETTLE_MS) {
+    closeCount = 0;
+    return;
+  }
+
+  // Smooth out the sensor's jitter with the median of the last few readings
+  if (historyAt < 0) {
+    std::fill(history, history + SENSOR_HISTORY, 80.0f);  // start out as "nobody there"
+    historyAt = 0;
+  }
+  history[historyAt] = readDistanceCm();
+  historyAt = (historyAt + 1) % SENSOR_HISTORY;
+  float sorted[SENSOR_HISTORY];
+  memcpy(sorted, history, sizeof(sorted));
+  distanceCm = median(sorted, SENSOR_HISTORY);
   if (streamDistance) {
     Serial.printf("Distance: %.0f cm\n", distanceCm);
   }
