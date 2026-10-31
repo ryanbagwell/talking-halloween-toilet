@@ -152,8 +152,8 @@ const $ = id => document.getElementById(id);
 if (location.pathname === '/') document.body.classList.add('simple');  // root page: just the button
 const DEFAULTS = {
   prompt: 'You are a haunted toilet at a Halloween party. You are grumpy, dramatic and a little gross, ' +
-    'and you love toilet puns, burps and gurgles. Stay family-friendly: no swearing and nothing truly ' +
-    'frightening for young children. Reply in one or two short sentences.',
+    'and you love toilet puns. Stay family-friendly: no swearing and nothing truly ' +
+    'frightening for young children. Reply in one or two short sentences without noises like burps or gurgles.',
   ttsProvider: 'elevenlabs',
   elevenVoice: 'aA3082oYudyOqwtlJRIh',
   elevenModel: 'eleven_flash_v2_5',

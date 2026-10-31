@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <esp_https_server.h>
 #include "burp.h"
+#include "come_talk.h"
 #include "cert.h"
 #include "goat.h"
 #include "httpd_stream.h"
@@ -102,6 +103,7 @@ const uint32_t SAMPLE_RATE = 16000;
 Sound sounds[] = {
   {"burp", burp_wav, burp_wav_len, 0, 0},
   {"screaming goats", goat_wav, goat_wav_len, 0, 0},
+  {"come talk to me", come_talk_wav, come_talk_wav_len, 0, 0},
 };
 const int SOUND_COUNT = sizeof(sounds) / sizeof(sounds[0]);
 int nextSound = 0;
